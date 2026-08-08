@@ -39,6 +39,14 @@ PROMPT=$(printf '%s' "$INPUT" | jq -r '.tool_input.prompt // empty' 2>/dev/null 
 if [ -z "$URL" ]; then dbg "no url in tool_input, exit"; exit 0; fi
 dbg "url=$URL prompt=$(printf '%s' "$PROMPT" | head -c 80)"
 
+# Only http(s) URLs are cacheable, and anything that could be read as a curl
+# option (leading dash) or a non-web scheme (file:, gopher:) is refused rather
+# than handed to curl.
+case "$URL" in
+  http://*|https://*) ;;
+  *) dbg "unsupported url scheme, exit"; exit 0 ;;
+esac
+
 # WebFetch tool_response shape (Claude Code as of 2026-04): an object with
 # keys bytes, code, codeText, durationMs, result, url — content lives at
 # .result. The other keys (.output / .text / .content / .body) are kept as
@@ -88,7 +96,9 @@ CACHE_FILE="$CACHE_DIR/$(hash_key "$URL").json"
 # "the origin sent no validators", which would evict a still-revalidatable
 # entry. Distinguish the two below.
 HEAD_ERR=$(mktemp)
-if HEAD_OUT=$(curl -sSI -L --max-time 5 "$URL" 2>"$HEAD_ERR"); then
+if HEAD_OUT=$(curl -sSI -L --max-redirs 5 --max-time 5 \
+  --proto '=http,https' --proto-redir '=http,https' \
+  -- "$URL" 2>"$HEAD_ERR"); then
   HEAD_OK=1
 else
   HEAD_OK=0
