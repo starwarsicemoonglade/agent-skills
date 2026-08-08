@@ -34,6 +34,14 @@ PROMPT=$(printf '%s' "$INPUT" | jq -r '.tool_input.prompt // empty' 2>/dev/null 
 if [ -z "$URL" ]; then dbg "no url in tool_input, exit"; exit 0; fi
 dbg "url=$URL prompt=$(printf '%s' "$PROMPT" | head -c 80)"
 
+# Only http(s) URLs are cacheable, and anything that could be read as a curl
+# option (leading dash) or a non-web scheme (file:, gopher:) is refused rather
+# than handed to curl.
+case "$URL" in
+  http://*|https://*) ;;
+  *) dbg "unsupported url scheme, exit"; exit 0 ;;
+esac
+
 # WebFetch tool_response shape (Claude Code as of 2026-04): an object with
 # keys bytes, code, codeText, durationMs, result, url — content lives at
 # .result. The other keys (.output / .text / .content / .body) are kept as
@@ -79,7 +87,9 @@ CACHE_FILE="$CACHE_DIR/$(hash_key "$URL").json"
 # Capture validators from the origin. Follow redirects so they match the
 # URL the agent actually talked to. Strip CR so awk's paragraph mode
 # recognises blank separators between response blocks on a redirect chain.
-HEAD_OUT=$(curl -sI -L --max-time 5 "$URL" 2>/dev/null | tr -d '\r' || true)
+HEAD_OUT=$(curl -sI -L --max-redirs 5 --max-time 5 \
+  --proto '=http,https' --proto-redir '=http,https' \
+  -- "$URL" 2>/dev/null | tr -d '\r' || true)
 
 # Take only the final response's headers (last paragraph) to avoid picking
 # up validators from intermediate 301/302 hops.
