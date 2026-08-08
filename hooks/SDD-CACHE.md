@@ -68,7 +68,8 @@ One cache entry per URL, stored as JSON in `.claude/sdd-cache/<sha>.json`:
 **Freshness rules:**
 
 - Entry is served only if the origin confirms `304 Not Modified`.
-- Entries without an `ETag` or `Last-Modified` header are never cached — without a validator, the hook cannot verify freshness later, and caching would mean trusting memory.
+- Entries without an `ETag` or `Last-Modified` header are never cached — without a validator, the hook cannot verify freshness later, and caching would mean trusting memory. This applies only when the origin actually answered: if the post hook's `HEAD` request itself fails (offline, DNS, timeout), the existing entry is left in place rather than evicted, and the reason is written to the debug log.
+- An entry that is not valid JSON is evicted on the next read instead of being read back as a field-less miss.
 - Cache key is `sha256(url)`. The same URL asked with a different prompt hits the same entry; the cached body reflects the prompt used on the first fetch, and that prompt is shown alongside the hit so the agent can decide whether to re-use or re-fetch manually.
 
 **What the agent sees:**

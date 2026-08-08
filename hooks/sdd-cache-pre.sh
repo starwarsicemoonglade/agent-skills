@@ -34,7 +34,12 @@ dbg() {
 }
 dbg "fired"
 
-URL=$(printf '%s' "$INPUT" | jq -r '.tool_input.url // empty' 2>/dev/null || true)
+# Separate "input isn't JSON we understand" from "this call has no URL": both
+# bypass the cache, but only the first one is a bug worth seeing in the log.
+if ! URL=$(printf '%s' "$INPUT" | jq -r '.tool_input.url // empty' 2>&1); then
+  dbg "hook input is not valid JSON ($URL), bypassing cache"
+  exit 0
+fi
 if [ -z "$URL" ]; then dbg "no url in tool_input, exit"; exit 0; fi
 dbg "url=$URL"
 
@@ -52,6 +57,15 @@ CACHE_FILE="$CACHE_DIR/$(hash_key "$URL").json"
 
 if [ ! -f "$CACHE_FILE" ]; then dbg "no cache file at $CACHE_FILE, exit"; exit 0; fi
 dbg "cache file exists: $CACHE_FILE"
+
+# A corrupt entry (truncated write, edited by hand) would otherwise read back as
+# a series of empty fields and look like a plain cache miss forever. Say so and
+# evict it so the next fetch can write a good one.
+if ! jq -e . "$CACHE_FILE" >/dev/null 2>&1; then
+  dbg "cache file is not valid JSON, evicting $CACHE_FILE and bypassing"
+  rm -f "$CACHE_FILE"
+  exit 0
+fi
 
 FETCHED_AT=$(jq -r '.fetched_at // 0' "$CACHE_FILE" 2>/dev/null || echo 0)
 ORIGINAL_PROMPT=$(jq -r '.prompt // empty' "$CACHE_FILE" 2>/dev/null || true)

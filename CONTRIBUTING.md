@@ -100,6 +100,12 @@ bash hooks/session-start-test.sh
 
 Expected output: `session-start JSON payload OK`. The script exits non-zero on any assertion failure.
 
+The simplify-ignore hook (`hooks/simplify-ignore.sh`) has its own suite at `hooks/simplify-ignore-test.sh`; run it when touching that hook. CI runs both hook suites.
+
+```bash
+bash hooks/simplify-ignore-test.sh
+```
+
 ### Reproducing the no-jq fallback
 
 The hook gracefully degrades to an `INFO`-priority payload when `jq` isn't on `PATH`. To exercise that branch locally, strip `jq`'s directory from `PATH` for the test invocation:
