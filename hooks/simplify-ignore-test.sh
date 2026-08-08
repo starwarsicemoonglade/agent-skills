@@ -247,6 +247,38 @@ else
   assert_eq "missing-jq guard surfaced" "1" "$(printf '%s' "$warning_out" | grep -c 'error: missing jq')"
 fi
 
+# ── Test 11: Stop restores every file even when a lock is already gone ───
+printf '\nTest 11: Stop restores all files when a lock is missing\n'
+
+if command -v jq >/dev/null 2>&1; then
+  PROJ="$TMPDIR/project"
+  mkdir -p "$PROJ"
+  ORIGINAL='const a = 1;
+/* simplify-ignore-start */ const secret = 42; /* simplify-ignore-end */
+const b = 2;'
+
+  for name in first second; do
+    printf '%s\n' "$ORIGINAL" > "$PROJ/$name.js"
+    printf '{"tool_name":"Read","tool_input":{"file_path":"%s"}}\n' "$PROJ/$name.js" \
+      | CLAUDE_PROJECT_DIR="$PROJ" bash hooks/simplify-ignore.sh >/dev/null
+  done
+
+  assert_eq "both files filtered on Read" "2" "$(grep -l 'BLOCK_' "$PROJ/first.js" "$PROJ/second.js" | wc -l | tr -d ' ')"
+
+  # Simulate a lock that vanished (crash, or another session reclaimed it).
+  # This used to abort the Stop hook mid-loop and leave files placeholdered.
+  rm -rf "$PROJ/.claude/.simplify-ignore-cache"/*.lock
+
+  stop_status=0
+  stop_out=$(printf '{}' | CLAUDE_PROJECT_DIR="$PROJ" bash hooks/simplify-ignore.sh 2>&1) || stop_status=$?
+  assert_eq "Stop hook exits 0" "0" "$stop_status"
+  assert_eq "Stop hook stays quiet" "" "$stop_out"
+  assert_eq "first.js restored" "$ORIGINAL" "$(cat "$PROJ/first.js")"
+  assert_eq "second.js restored" "$ORIGINAL" "$(cat "$PROJ/second.js")"
+else
+  printf '  SKIP: jq not available\n'
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────────
 printf '\n══════════════════════════════════════════\n'
 printf 'Results: %d passed, %d failed\n' "$PASS" "$FAIL"

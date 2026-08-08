@@ -29,7 +29,12 @@ dbg() {
 }
 dbg "fired, input=$(printf '%s' "$INPUT" | head -c 400)"
 
-URL=$(printf '%s'    "$INPUT" | jq -r '.tool_input.url    // empty' 2>/dev/null || true)
+# Separate "input isn't JSON we understand" from "this call has no URL": both
+# skip caching, but only the first one is a bug worth seeing in the log.
+if ! URL=$(printf '%s' "$INPUT" | jq -r '.tool_input.url // empty' 2>&1); then
+  dbg "hook input is not valid JSON ($URL), skipping cache write"
+  exit 0
+fi
 PROMPT=$(printf '%s' "$INPUT" | jq -r '.tool_input.prompt // empty' 2>/dev/null || true)
 if [ -z "$URL" ]; then dbg "no url in tool_input, exit"; exit 0; fi
 dbg "url=$URL prompt=$(printf '%s' "$PROMPT" | head -c 80)"
@@ -90,6 +95,22 @@ CACHE_FILE="$CACHE_DIR/$(hash_key "$URL").json"
 HEAD_OUT=$(curl -sI -L --max-redirs 5 --max-time 5 \
   --proto '=http,https' --proto-redir '=http,https' \
   -- "$URL" 2>/dev/null | tr -d '\r' || true)
+# Keep curl's exit status: a transient HEAD failure must not be mistaken for
+# "the origin sent no validators", which would evict a still-revalidatable
+# entry. Distinguish the two below.
+HEAD_ERR=$(mktemp)
+if HEAD_OUT=$(curl -sSI -L --max-time 5 "$URL" 2>"$HEAD_ERR"); then
+  HEAD_OK=1
+else
+  HEAD_OK=0
+fi
+HEAD_OUT=$(printf '%s' "$HEAD_OUT" | tr -d '\r')
+if [ "$HEAD_OK" != "1" ]; then
+  dbg "HEAD request failed ($(tr -d '\n' < "$HEAD_ERR")); leaving any existing entry untouched and exit"
+  rm -f "$HEAD_ERR"
+  exit 0
+fi
+rm -f "$HEAD_ERR"
 
 # Take only the final response's headers (last paragraph) to avoid picking
 # up validators from intermediate 301/302 hops.
@@ -116,6 +137,8 @@ ETAG=$(extract_header "ETag")
 LAST_MOD=$(extract_header "Last-Modified")
 dbg "HEAD etag=$ETAG last_modified=$LAST_MOD"
 
+# The origin answered but offers nothing to revalidate against, so any stored
+# entry can never be served again — drop it rather than keep dead bytes.
 if [ -z "$ETAG" ] && [ -z "$LAST_MOD" ]; then
   dbg "no validator from origin, removing any stale entry and exit"
   rm -f "$CACHE_FILE"

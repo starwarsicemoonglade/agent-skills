@@ -74,6 +74,17 @@ The frontmatter fields above are required. The section anatomy is a recommended 
 
 We don't accept translations of the documentation (README, `docs/`) or of skills and their content. Translated copies drift out of sync as skills and docs evolve, and we have no way to maintain them long-term without leaning on agent translations plus community corrections, which adds maintenance cost for limited value. Keep all skills, docs, and contributions in English.
 
+## Testing Validators
+
+The validators in `scripts/` have unit tests that run in CI. Run them before opening a PR that touches `scripts/`:
+
+```bash
+node --test scripts/lib/skill-lint-test.js   # skill lint rules (docs/skill-anatomy.md)
+node --test scripts/validate-skills-test.js  # validate-skills.js CLI: report format and exit codes
+node --test scripts/validate-commands-test.js
+node --test scripts/run-evals-test.js
+```
+
 ## Testing Hooks
 
 The session-start hook (`hooks/session-start.sh`) injects the `using-agent-skills` meta-skill into every new Claude Code session. A regression test at `hooks/session-start-test.sh` validates the hook's JSON payload — both when `jq` is available and when it isn't.
@@ -88,6 +99,12 @@ bash hooks/session-start-test.sh
 ```
 
 Expected output: `session-start JSON payload OK`. The script exits non-zero on any assertion failure.
+
+The simplify-ignore hook (`hooks/simplify-ignore.sh`) has its own suite at `hooks/simplify-ignore-test.sh`; run it when touching that hook. CI runs both hook suites.
+
+```bash
+bash hooks/simplify-ignore-test.sh
+```
 
 ### Reproducing the no-jq fallback
 
