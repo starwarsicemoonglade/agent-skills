@@ -61,7 +61,11 @@ function descriptionFromToml(filePath) {
 
 // ─── Loader ───────────────────────────────────────────────────────────────────
 
-function loadCommands({ dir, ext }) {
+// Unreadable files are recorded in readErrors so main() can count them as
+// errors in its own tally: without that, a file the validator could not read
+// would only be reported if a later check happened to notice its null
+// description, and the run could still exit 0.
+function loadCommands({ dir, ext }, readErrors) {
   if (!fs.existsSync(dir)) return {};
   return Object.fromEntries(
     fs.readdirSync(dir)
@@ -73,7 +77,7 @@ function loadCommands({ dir, ext }) {
           const desc = ext === '.md' ? descriptionFromMd(full) : descriptionFromToml(full);
           return [stem, desc];
         } catch (e) {
-          console.log(`  ✗  ${stem} — cannot read file: ${e.message}`);
+          readErrors.push(`${path.relative(ROOT, full)} — cannot read file: ${e.message}`);
           return [stem, null];
         }
       })
@@ -83,10 +87,11 @@ function loadCommands({ dir, ext }) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 function main() {
+  const readErrors = [];
   const byTool = {
-    claude:      loadCommands(DIRS.claude),
-    gemini:      loadCommands(DIRS.gemini),
-    antigravity: loadCommands(DIRS.antigravity),
+    claude:      loadCommands(DIRS.claude, readErrors),
+    gemini:      loadCommands(DIRS.gemini, readErrors),
+    antigravity: loadCommands(DIRS.antigravity, readErrors),
   };
 
   // Canonical command list: use Claude stems as the reference.
@@ -102,6 +107,11 @@ function main() {
   ]);
 
   let errors = 0;
+
+  for (const message of readErrors) {
+    console.log(`  ✗  ${message}`);
+    errors++;
+  }
 
   // ── Parity check ────────────────────────────────────────────────────────────
   console.log('Checking command parity...');
@@ -177,4 +187,11 @@ function main() {
   if (errors > 0) process.exit(1);
 }
 
-main();
+// Surface unexpected failures (fs errors, bad symlinks, …) as a structured
+// one-line CI error instead of an uncaught stack trace.
+try {
+  main();
+} catch (err) {
+  console.error(`\nERROR: validate-commands failed unexpectedly: ${err.message}`);
+  process.exit(1);
+}

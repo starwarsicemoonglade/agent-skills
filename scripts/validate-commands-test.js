@@ -3,6 +3,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 const { afterEach, test } = require('node:test');
 
@@ -110,6 +111,20 @@ test('fails with an actionable error for a malformed description', () => {
   assert.equal(result.status, 1, result.stdout + result.stderr);
   assert.match(result.stdout, /\.gemini\/commands\/review — missing or malformed description/);
   assert.match(result.stdout, /1 commands checked — 1 error\(s\) — FAILED/);
+});
+
+test('fails when a command file cannot be read', () => {
+  const root = makeSandbox();
+  writeMatchingCommands(root, 'review', 'Review a change');
+  // A directory named like a command file is the portable way to make the read
+  // fail (EISDIR) without depending on file permissions.
+  fs.rmSync(path.join(root, '.gemini', 'commands', 'review.toml'));
+  fs.mkdirSync(path.join(root, '.gemini', 'commands', 'review.toml'), { recursive: true });
+
+  const result = run(root);
+
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /\.gemini\/commands\/review\.toml — cannot read file/);
 });
 
 test('parses escaped quotes in double-quoted TOML descriptions', () => {

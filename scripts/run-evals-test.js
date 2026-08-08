@@ -183,6 +183,56 @@ test('dry-runs a fixtureless dialogue eval', () => {
   assert.match(result.stdout, /dialogue transcript/);
 });
 
+test('reports a skill whose SKILL.md has no frontmatter instead of skipping it', () => {
+  const root = makeSandbox();
+  writeSkill(root, 'alpha-skill', 'Handles alpha widgets. Use when changing alpha widgets.');
+  writeCase(root, 'alpha-skill', completeCase('alpha-skill', 'change alpha widget'));
+  const brokenDir = path.join(root, 'skills', 'broken-skill');
+  fs.mkdirSync(brokenDir, { recursive: true });
+  fs.writeFileSync(path.join(brokenDir, 'SKILL.md'), '# broken-skill\n');
+
+  const result = run(root);
+
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /broken-skill: SKILL\.md has no YAML frontmatter/);
+});
+
+test('reports a skill whose frontmatter is missing a description', () => {
+  const root = makeSandbox();
+  writeSkill(root, 'alpha-skill', 'Handles alpha widgets. Use when changing alpha widgets.');
+  writeCase(root, 'alpha-skill', completeCase('alpha-skill', 'change alpha widget'));
+  const partialDir = path.join(root, 'skills', 'partial-skill');
+  fs.mkdirSync(partialDir, { recursive: true });
+  fs.writeFileSync(path.join(partialDir, 'SKILL.md'), '---\nname: partial-skill\n---\n\n# partial\n');
+
+  const result = run(root);
+
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /partial-skill: SKILL\.md frontmatter is missing description/);
+});
+
+test('reports an unreadable eval case file', () => {
+  const root = makeSandbox();
+  writeSkill(root, 'alpha-skill', 'Handles alpha widgets. Use when changing alpha widgets.');
+  // A directory named like a case file is the portable way to make the read
+  // fail (EISDIR) without depending on file permissions.
+  fs.mkdirSync(path.join(root, 'evals', 'cases', 'alpha-skill.json'), { recursive: true });
+
+  const result = run(root);
+
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /alpha-skill\.json: invalid JSON — unreadable/);
+});
+
+test('rejects --behavioral without a skill name', () => {
+  const root = makeSandbox();
+
+  const result = run(root, ['--behavioral', '--dry-run']);
+
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stderr, /--behavioral requires a skill name/);
+});
+
 test('enforces the configured rank-1 floor', () => {
   const root = makeSandbox();
   writeSkill(root, 'alpha-skill', 'Handles widget work. Use when implementing widget changes.');
