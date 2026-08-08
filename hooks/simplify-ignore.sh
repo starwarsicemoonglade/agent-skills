@@ -35,6 +35,27 @@ if [ -n "$parse_error" ]; then
   printf 'Warning: %s (input: %.120s)\n' "$parse_error" "$INPUT" >&2
 fi
 
+# rmdir on a lock that is already gone (or not empty) is not a failure worth
+# aborting for, but under `set -e` a bare non-zero rmdir would exit the hook
+# mid-loop and leave the remaining files unrestored. Always report, never abort.
+release_lock() {
+  [ -d "$1" ] || return 0
+  rmdir "$1" 2>/dev/null && return 0
+  printf 'Warning: could not release simplify-ignore lock %s\n' "$1" >&2
+}
+
+# Writes $1 over $2 in place (preserving inode and permissions). On failure the
+# target may be half-written, so say so loudly and name the backup that still
+# holds the real content instead of failing silently.
+write_in_place() {
+  local src="$1" dest="$2" backup="$3"
+  if cat "$src" > "$dest"; then
+    return 0
+  fi
+  printf 'Error: failed to write %s; its content may be incomplete. Original preserved at %s\n' "$dest" "$backup" >&2
+  return 1
+}
+
 hash_cmd() {
   if command -v shasum >/dev/null 2>&1; then shasum
   elif command -v sha1sum >/dev/null 2>&1; then sha1sum
@@ -151,22 +172,26 @@ if [ -z "$TOOL_NAME" ]; then
     [ -f "$pathfile" ] || { rm -f "$bak"; continue; }
     orig=$(cat "$pathfile")
     if [ -f "$orig" ]; then
-      cat "$bak" > "$orig"
+      # Keep the backup when the restore fails so the real content is not lost,
+      # and keep restoring the other files instead of aborting the whole hook.
+      if ! cat "$bak" > "$orig"; then
+        printf 'Error: could not restore %s from %s; backup kept\n' "$orig" "$bak" >&2
+        continue
+      fi
       rm -f "$bak" "$pathfile" "$CACHE/${fid}".block.* "$CACHE/${fid}".reason.* "$CACHE/${fid}".prefix.* "$CACHE/${fid}".suffix.*
-      rmdir "$CACHE/${fid}.lock" 2>/dev/null
+      release_lock "$CACHE/${fid}.lock"
     else
       # File was moved/deleted — save backup as .recovered, don't destroy it
       mkdir -p "$(dirname "${orig}.recovered")"
       mv "$bak" "${orig}.recovered"
       rm -f "$pathfile" "$CACHE/${fid}".block.* "$CACHE/${fid}".reason.* "$CACHE/${fid}".prefix.* "$CACHE/${fid}".suffix.*
-      rmdir "$CACHE/${fid}.lock" 2>/dev/null
+      release_lock "$CACHE/${fid}.lock"
       printf 'Warning: %s was moved/deleted. Recovered original to %s.recovered\n' "$orig" "$orig" >&2
     fi
   done
   # Clean orphan locks (created but crash before backup)
   for lockdir in "$CACHE"/*.lock; do
-    [ -d "$lockdir" ] || continue
-    rmdir "$lockdir" 2>/dev/null
+    release_lock "$lockdir"
   done
   exit 0
 fi
@@ -206,11 +231,14 @@ if [ "$TOOL_NAME" = "Read" ]; then
   FILTERED="$CACHE/${ID}.$$.tmp"
   rm -f "$FILTERED"
   if filter_file "$FILE_PATH" "$FILTERED" "$ID"; then
-    cat "$FILTERED" > "$FILE_PATH"
+    if ! write_in_place "$FILTERED" "$FILE_PATH" "$CACHE/${ID}.bak"; then
+      rm -f "$FILTERED"
+      exit 1
+    fi
     rm -f "$FILTERED"
   else
     rm -f "$FILTERED" "$CACHE/${ID}.bak" "$CACHE/${ID}.path"
-    rmdir "$CACHE/${ID}.lock" 2>/dev/null
+    release_lock "$CACHE/${ID}.lock"
   fi
   exit 0
 fi
@@ -284,7 +312,10 @@ if [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "Write" ]; then
     fi
   done
   # Preserve inode and permissions
-  cat "$EXPANDED" > "$FILE_PATH"
+  if ! write_in_place "$EXPANDED" "$FILE_PATH" "$CACHE/${ID}.bak"; then
+    rm -f "$EXPANDED"
+    exit 1
+  fi
   rm -f "$EXPANDED"
 
   # Save expanded version as new backup (this is the "real" file with model's changes)
@@ -294,7 +325,10 @@ if [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "Write" ]; then
   FILTERED="$CACHE/${ID}.$$.tmp"
   rm -f "$FILTERED"
   if filter_file "$FILE_PATH" "$FILTERED" "$ID"; then
-    cat "$FILTERED" > "$FILE_PATH"
+    if ! write_in_place "$FILTERED" "$FILE_PATH" "$CACHE/${ID}.bak"; then
+      rm -f "$FILTERED"
+      exit 1
+    fi
     rm -f "$FILTERED"
   fi
 
