@@ -23,6 +23,8 @@
 const fs   = require('fs');
 const path = require('path');
 
+const { readFrontmatter } = require('./lib/markdown');
+
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 const ROOT = path.resolve(__dirname, '..');
@@ -45,17 +47,8 @@ const NAME_MAP_REVERSE = Object.fromEntries(
 // ─── Parsers ──────────────────────────────────────────────────────────────────
 
 function descriptionFromMd(filePath) {
-  const content = fs.readFileSync(filePath, 'utf8');
-  const match   = content.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n/);
-  if (!match) return null;
-  for (const line of match[1].split(/\r?\n/)) {
-    const colonIdx = line.indexOf(':');
-    if (colonIdx === -1) continue;
-    if (line.slice(0, colonIdx).trim() === 'description') {
-      return line.slice(colonIdx + 1).trim().replace(/^['"]|['"]$/g, '');
-    }
-  }
-  return null;
+  const fm = readFrontmatter(filePath);
+  return fm?.description ?? null;
 }
 
 function descriptionFromToml(filePath) {

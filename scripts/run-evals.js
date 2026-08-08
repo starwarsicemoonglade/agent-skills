@@ -33,6 +33,8 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
+const { loadSkills } = require('./lib/skills');
+
 const ROOT = path.join(__dirname, '..');
 const SKILLS_DIR = path.join(ROOT, 'skills');
 const CASES_DIR = path.join(ROOT, 'evals', 'cases');
@@ -150,45 +152,6 @@ function rankSkills(prompt, corpus) {
 
 // ---------- loading ----------
 
-// A skill that cannot be loaded is invisible to every routing check below, so
-// an unloadable SKILL.md must be reported rather than skipped: silently
-// dropping it would turn a broken skill into a green eval run.
-function loadSkills() {
-  const skills = [];
-  const problems = [];
-  let entries;
-  try {
-    entries = fs.readdirSync(SKILLS_DIR);
-  } catch (e) {
-    throw new Error(`cannot read skills directory ${path.relative(ROOT, SKILLS_DIR)} — ${e.message}`);
-  }
-  for (const dir of entries) {
-    const file = path.join(SKILLS_DIR, dir, 'SKILL.md');
-    if (!fs.existsSync(file)) continue;
-    let src;
-    try {
-      src = fs.readFileSync(file, 'utf8');
-    } catch (e) {
-      problems.push(`${dir}: SKILL.md is unreadable — ${e.message}`);
-      continue;
-    }
-    const m = src.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
-    if (!m) {
-      problems.push(`${dir}: SKILL.md has no YAML frontmatter, so the skill cannot be routed to`);
-      continue;
-    }
-    const name = (m[1].match(/^name:\s*(.+)$/m) || [])[1];
-    const description = (m[1].match(/^description:\s*(.+)$/m) || [])[1];
-    if (!name || !description) {
-      const missing = [!name && 'name', !description && 'description'].filter(Boolean).join(' and ');
-      problems.push(`${dir}: SKILL.md frontmatter is missing ${missing}, so the skill cannot be routed to`);
-      continue;
-    }
-    skills.push({ name: name.trim(), description: description.trim(), dir });
-  }
-  return { skills, problems };
-}
-
 function loadCases() {
   if (!fs.existsSync(CASES_DIR)) return [];
   return fs
@@ -245,7 +208,7 @@ function resolveFixturePath(root, rel) {
 // ---------- tier 2 ----------
 
 function runDeterministic(minRank1) {
-  const { skills, problems } = loadSkills();
+  const { skills, problems } = loadSkills(SKILLS_DIR);
   const cases = loadCases();
   const corpus = buildCorpus(skills);
   const skillNames = new Set(skills.map((s) => s.name));

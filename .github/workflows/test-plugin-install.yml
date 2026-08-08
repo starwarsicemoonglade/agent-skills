@@ -20,8 +20,8 @@ jobs:
       - name: Validate all skills
         run: node scripts/validate-skills.js
 
-      - name: Test skill linter rules
-        run: node --test scripts/lib/skill-lint-test.js
+      - name: Test shared script libraries
+        run: node --test scripts/lib
 
       - name: Test skill validator CLI
         run: node --test scripts/validate-skills-test.js

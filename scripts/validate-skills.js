@@ -17,6 +17,7 @@ const fs   = require('fs');
 const path = require('path');
 
 const { lintSkill } = require('./lib/skill-lint');
+const { listSkillDirs } = require('./lib/skills');
 
 const SKILLS_DIR = path.resolve(__dirname, '..', 'skills');
 
@@ -28,9 +29,7 @@ function main() {
     process.exit(1);
   }
 
-  const skillDirs = fs.readdirSync(SKILLS_DIR)
-    .filter(d => fs.statSync(path.join(SKILLS_DIR, d)).isDirectory())
-    .sort();
+  const skillDirs = listSkillDirs(SKILLS_DIR);
 
   const knownSkills = new Set(skillDirs);
 

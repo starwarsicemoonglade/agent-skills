@@ -4,27 +4,20 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
 const { afterEach, test } = require('node:test');
 
+const {
+  createSandbox,
+  writeFile,
+  runScript,
+  removeSandboxes,
+} = require('./lib/script-sandbox');
+
 const VALIDATOR = path.join(__dirname, 'validate-commands.js');
-const sandboxes = [];
 
 function makeSandbox() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-skills-validate-commands-test-'));
-  const scriptsDir = path.join(root, 'scripts');
-  fs.mkdirSync(scriptsDir, { recursive: true });
-  fs.copyFileSync(VALIDATOR, path.join(scriptsDir, 'validate-commands.js'));
-  sandboxes.push(root);
-  return root;
-}
-
-function writeFile(root, relativePath, content) {
-  const file = path.join(root, relativePath);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, content);
+  return createSandbox({ script: VALIDATOR });
 }
 
 function writeClaudeCommand(root, stem, descriptionLine) {
@@ -46,17 +39,10 @@ function writeMatchingCommands(root, stem, description) {
 }
 
 function run(root) {
-  return spawnSync(process.execPath, [path.join(root, 'scripts', 'validate-commands.js')], {
-    cwd: root,
-    encoding: 'utf8',
-  });
+  return runScript(root, 'validate-commands.js');
 }
 
-afterEach(() => {
-  for (const root of sandboxes.splice(0)) {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
+afterEach(removeSandboxes);
 
 test('passes matching command twins and maps plan to planning', () => {
   const root = makeSandbox();

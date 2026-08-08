@@ -20,8 +20,10 @@
  *   - cross-skill references point to known skills
  */
 
-const fs   = require('fs');
-const path = require('path');
+const fs = require('fs');
+
+const { parseFrontmatter, stripFencedCodeBlocks } = require('./markdown');
+const { skillFilePath } = require('./skills');
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -76,34 +78,6 @@ const SKILL_REF_PATTERNS = [
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/**
- * Strip fenced code blocks from markdown content so that headings, references,
- * and trigger phrases inside examples or templates are not matched by lint rules.
- */
-function stripFencedCodeBlocks(content) {
-  return content.replace(/^(`{3,})[^\n]*\n[\s\S]*?^\1\s*$/gm, '');
-}
-
-/**
- * Parse YAML-style frontmatter from the top of a markdown file.
- * Returns a key→value object, or null if no frontmatter block found.
- * Values are stripped of surrounding quotes.
- */
-function parseFrontmatter(content) {
-  const match = content.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n/);
-  if (!match) return null;
-
-  const result = {};
-  for (const line of match[1].split(/\r?\n/)) {
-    const colonIdx = line.indexOf(':');
-    if (colonIdx === -1) continue;
-    const key   = line.slice(0, colonIdx).trim();
-    const value = line.slice(colonIdx + 1).trim().replace(/^['"]|['"]$/g, '');
-    if (key) result[key] = value;
-  }
-  return result;
-}
 
 /**
  * Collect all explicit skill cross-references from content.
@@ -222,7 +196,7 @@ function lintSkillContent(dirName, content, knownSkills) {
  * Returns { errors, warnings, exempt }.
  */
 function lintSkill(dirName, skillsDir, knownSkills) {
-  const skillPath = path.join(skillsDir, dirName, 'SKILL.md');
+  const skillPath = skillFilePath(skillsDir, dirName);
 
   if (!fs.existsSync(skillPath)) {
     return { errors: ['Missing SKILL.md'], warnings: [], exempt: false };
@@ -238,7 +212,8 @@ function lintSkill(dirName, skillsDir, knownSkills) {
   return lintSkillContent(dirName, content, knownSkills);
 }
 
-// Export only the linting functions. The policy collections (REQUIRED_SECTIONS,
+// Export the linting functions, plus parseFrontmatter for consumers that only
+// need the shared frontmatter parser. The policy collections (REQUIRED_SECTIONS,
 // SECTION_EXEMPT_SKILLS, SKILL_REF_PATTERNS, and the regexes) stay private so a
 // test or future consumer cannot mutate shared state and change lint results for
 // the rest of the process. Exercise the rules through these functions.

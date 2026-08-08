@@ -4,49 +4,38 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
 const { afterEach, test } = require('node:test');
 
+const {
+  createSandbox,
+  writeFile,
+  runScript,
+  removeSandboxes,
+} = require('./lib/script-sandbox');
+
 const VALIDATOR = path.join(__dirname, 'validate-skills.js');
-const LINTER = path.join(__dirname, 'lib', 'skill-lint.js');
-const sandboxes = [];
 
 const SECTIONS = ['## Overview', '## When to Use', '## Common Rationalizations', '## Red Flags', '## Verification'];
 
 function makeSandbox({ withSkillsDir = true } = {}) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-skills-validate-skills-test-'));
-  fs.mkdirSync(path.join(root, 'scripts', 'lib'), { recursive: true });
-  fs.copyFileSync(VALIDATOR, path.join(root, 'scripts', 'validate-skills.js'));
-  fs.copyFileSync(LINTER, path.join(root, 'scripts', 'lib', 'skill-lint.js'));
-  if (withSkillsDir) fs.mkdirSync(path.join(root, 'skills'));
-  sandboxes.push(root);
-  return root;
+  return createSandbox({ script: VALIDATOR, dirs: withSkillsDir ? ['skills'] : [] });
 }
 
 function writeSkill(root, dirName, { name = dirName, description = 'Does a thing. Use when doing that thing.', sections = SECTIONS, extra = '' } = {}) {
-  const dir = path.join(root, 'skills', dirName);
-  fs.mkdirSync(dir, { recursive: true });
   const body = sections.map(s => `${s}\n\nBody.\n`).join('\n');
-  fs.writeFileSync(
-    path.join(dir, 'SKILL.md'),
+  writeFile(
+    root,
+    path.join('skills', dirName, 'SKILL.md'),
     `---\nname: ${name}\ndescription: ${description}\n---\n\n${body}${extra}`,
   );
 }
 
 function run(root) {
-  return spawnSync(process.execPath, [path.join(root, 'scripts', 'validate-skills.js')], {
-    cwd: root,
-    encoding: 'utf8',
-  });
+  return runScript(root, 'validate-skills.js');
 }
 
-afterEach(() => {
-  for (const root of sandboxes.splice(0)) {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
+afterEach(removeSandboxes);
 
 test('passes and reports every conforming skill', () => {
   const root = makeSandbox();
