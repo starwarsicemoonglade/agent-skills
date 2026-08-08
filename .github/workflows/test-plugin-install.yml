@@ -21,7 +21,7 @@ jobs:
         run: node scripts/validate-skills.js
 
       - name: Test shared script libraries
-        run: node --test scripts/lib
+        run: node --test scripts/lib/*-test.js
 
       - name: Test skill validator CLI
         run: node --test scripts/validate-skills-test.js

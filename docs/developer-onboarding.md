@@ -65,7 +65,7 @@ node scripts/run-evals.js
 node scripts/run-evals.js --behavioral <skill-name> --dry-run
 
 # Unit tests for the shared script libraries in scripts/lib/
-node --test scripts/lib
+node --test scripts/lib/*-test.js
 
 # Hook regression test, required if you touch hooks/session-start.sh
 # or skills/using-agent-skills/SKILL.md
