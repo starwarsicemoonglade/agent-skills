@@ -92,14 +92,13 @@ CACHE_FILE="$CACHE_DIR/$(hash_key "$URL").json"
 # Capture validators from the origin. Follow redirects so they match the
 # URL the agent actually talked to. Strip CR so awk's paragraph mode
 # recognises blank separators between response blocks on a redirect chain.
-HEAD_OUT=$(curl -sI -L --max-redirs 5 --max-time 5 \
-  --proto '=http,https' --proto-redir '=http,https' \
-  -- "$URL" 2>/dev/null | tr -d '\r' || true)
 # Keep curl's exit status: a transient HEAD failure must not be mistaken for
 # "the origin sent no validators", which would evict a still-revalidatable
 # entry. Distinguish the two below.
 HEAD_ERR=$(mktemp)
-if HEAD_OUT=$(curl -sSI -L --max-time 5 "$URL" 2>"$HEAD_ERR"); then
+if HEAD_OUT=$(curl -sSI -L --max-redirs 5 --max-time 5 \
+  --proto '=http,https' --proto-redir '=http,https' \
+  -- "$URL" 2>"$HEAD_ERR"); then
   HEAD_OK=1
 else
   HEAD_OK=0
