@@ -64,6 +64,9 @@ node scripts/run-evals.js
 # Tier 3, behavioral (on demand, spends tokens; --dry-run prints the plan)
 node scripts/run-evals.js --behavioral <skill-name> --dry-run
 
+# Unit tests for the shared script libraries in scripts/lib/
+node --test scripts/lib
+
 # Hook regression test, required if you touch hooks/session-start.sh
 # or skills/using-agent-skills/SKILL.md
 bash hooks/session-start-test.sh

@@ -20,6 +20,9 @@ jobs:
       - name: Validate all skills
         run: node scripts/validate-skills.js
 
+      - name: Test shared script libraries
+        run: node --test scripts/lib
+
       - name: Test skill eval runner
         run: node --test scripts/run-evals-test.js
 

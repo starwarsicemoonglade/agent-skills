@@ -33,6 +33,8 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
+const { loadSkills } = require('./lib/skills');
+
 const ROOT = path.join(__dirname, '..');
 const SKILLS_DIR = path.join(ROOT, 'skills');
 const CASES_DIR = path.join(ROOT, 'evals', 'cases');
@@ -150,21 +152,6 @@ function rankSkills(prompt, corpus) {
 
 // ---------- loading ----------
 
-function loadSkills() {
-  const skills = [];
-  for (const dir of fs.readdirSync(SKILLS_DIR)) {
-    const file = path.join(SKILLS_DIR, dir, 'SKILL.md');
-    if (!fs.existsSync(file)) continue;
-    const src = fs.readFileSync(file, 'utf8');
-    const m = src.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
-    if (!m) continue;
-    const name = (m[1].match(/^name:\s*(.+)$/m) || [])[1];
-    const description = (m[1].match(/^description:\s*(.+)$/m) || [])[1];
-    if (name && description) skills.push({ name: name.trim(), description: description.trim(), dir });
-  }
-  return skills;
-}
-
 function loadCases() {
   if (!fs.existsSync(CASES_DIR)) return [];
   return fs
@@ -196,7 +183,7 @@ function resolveFixturePath(root, rel) {
 // ---------- tier 2 ----------
 
 function runDeterministic(minRank1) {
-  const skills = loadSkills();
+  const skills = loadSkills(SKILLS_DIR);
   const cases = loadCases();
   const corpus = buildCorpus(skills);
   const skillNames = new Set(skills.map((s) => s.name));

@@ -4,24 +4,29 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const test = require('node:test');
+const { afterEach, test } = require('node:test');
 const { materializeWorkspace } = require('./run-evals');
+
+const {
+  createSandbox,
+  writeFile,
+  writeJson,
+  runScript,
+  removeSandboxes,
+} = require('./lib/script-sandbox');
 
 const RUNNER = path.join(__dirname, 'run-evals.js');
 
-function writeJson(file, value) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
+function writeCase(root, skillName, value) {
+  writeJson(root, path.join('evals', 'cases', `${skillName}.json`), value);
 }
 
 function writeSkill(root, name, description) {
-  const dir = path.join(root, 'skills', name);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(
-    path.join(dir, 'SKILL.md'),
+  writeFile(
+    root,
+    path.join('skills', name, 'SKILL.md'),
     `---\nname: ${name}\ndescription: ${description}\n---\n\n# ${name}\n`,
   );
 }
@@ -51,21 +56,19 @@ function completeCase(skillName, positivePrompt, topK = 1, files) {
 }
 
 function makeSandbox() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-skills-run-evals-test-'));
-  fs.mkdirSync(path.join(root, 'scripts'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'evals', 'cases'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'evals', 'fixtures', 'project'), { recursive: true });
-  fs.copyFileSync(RUNNER, path.join(root, 'scripts', 'run-evals.js'));
-  fs.writeFileSync(path.join(root, 'evals', 'fixtures', 'project', 'context.txt'), 'fixture\n');
+  const root = createSandbox({
+    script: RUNNER,
+    dirs: [path.join('evals', 'cases'), path.join('skills')],
+  });
+  writeFile(root, path.join('evals', 'fixtures', 'project', 'context.txt'), 'fixture\n');
   return root;
 }
 
 function run(root, args = []) {
-  return spawnSync(process.execPath, [path.join(root, 'scripts', 'run-evals.js'), ...args], {
-    cwd: root,
-    encoding: 'utf8',
-  });
+  return runScript(root, 'run-evals.js', args);
 }
+
+afterEach(removeSandboxes);
 
 test('fails when a skill has no eval case file', () => {
   const root = makeSandbox();
@@ -80,7 +83,7 @@ test('fails when a skill has no eval case file', () => {
 test('fails when an eval case is below the required minimums', () => {
   const root = makeSandbox();
   writeSkill(root, 'alpha-skill', 'Handles alpha widgets. Use when changing alpha widgets.');
-  writeJson(path.join(root, 'evals', 'cases', 'alpha-skill.json'), {
+  writeCase(root, 'alpha-skill', {
     skill_name: 'alpha-skill',
     trigger: {
       positive: [{ prompt: 'change alpha widget', top_k: 1 }],
@@ -98,10 +101,7 @@ test('fails when an eval case is below the required minimums', () => {
 test('fails when a behavioral eval references a missing fixture', () => {
   const root = makeSandbox();
   writeSkill(root, 'alpha-skill', 'Handles alpha widgets. Use when changing alpha widgets.');
-  writeJson(
-    path.join(root, 'evals', 'cases', 'alpha-skill.json'),
-    completeCase('alpha-skill', 'change alpha widget', 1, ['missing/project.txt']),
-  );
+  writeCase(root, 'alpha-skill', completeCase('alpha-skill', 'change alpha widget', 1, ['missing/project.txt']));
 
   const result = run(root);
 
@@ -112,10 +112,7 @@ test('fails when a behavioral eval references a missing fixture', () => {
 test('requires fixtures for execution evals', () => {
   const root = makeSandbox();
   writeSkill(root, 'alpha-skill', 'Handles alpha widgets. Use when changing alpha widgets.');
-  writeJson(
-    path.join(root, 'evals', 'cases', 'alpha-skill.json'),
-    completeCase('alpha-skill', 'change alpha widget', 1, []),
-  );
+  writeCase(root, 'alpha-skill', completeCase('alpha-skill', 'change alpha widget', 1, []));
 
   const result = run(root);
 
@@ -128,7 +125,7 @@ test('allows dialogue evals without fixtures', () => {
   writeSkill(root, 'alpha-skill', 'Handles alpha widgets. Use when changing alpha widgets.');
   const evalCase = completeCase('alpha-skill', 'change alpha widget');
   evalCase.evals = [{ ...behavioralEval([]), kind: 'dialogue' }];
-  writeJson(path.join(root, 'evals', 'cases', 'alpha-skill.json'), evalCase);
+  writeCase(root, 'alpha-skill', evalCase);
 
   const result = run(root);
 
@@ -140,7 +137,7 @@ test('rejects provisional execution evals', () => {
   writeSkill(root, 'alpha-skill', 'Handles alpha widgets. Use when changing alpha widgets.');
   const evalCase = completeCase('alpha-skill', 'change alpha widget');
   evalCase.evals[0].trust_level = 'provisional';
-  writeJson(path.join(root, 'evals', 'cases', 'alpha-skill.json'), evalCase);
+  writeCase(root, 'alpha-skill', evalCase);
 
   const result = run(root);
 
@@ -153,7 +150,7 @@ test('allows dialogue evals with a legacy provisional marker', () => {
   writeSkill(root, 'alpha-skill', 'Handles alpha widgets. Use when changing alpha widgets.');
   const evalCase = completeCase('alpha-skill', 'change alpha widget');
   evalCase.evals = [{ ...behavioralEval([]), kind: 'dialogue', trust_level: 'provisional' }];
-  writeJson(path.join(root, 'evals', 'cases', 'alpha-skill.json'), evalCase);
+  writeCase(root, 'alpha-skill', evalCase);
 
   const result = run(root);
 
@@ -165,7 +162,7 @@ test('rejects unknown behavioral eval kinds', () => {
   writeSkill(root, 'alpha-skill', 'Handles alpha widgets. Use when changing alpha widgets.');
   const evalCase = completeCase('alpha-skill', 'change alpha widget');
   evalCase.evals[0].kind = 'conversation';
-  writeJson(path.join(root, 'evals', 'cases', 'alpha-skill.json'), evalCase);
+  writeCase(root, 'alpha-skill', evalCase);
 
   const result = run(root);
 
@@ -178,7 +175,7 @@ test('dry-runs a fixtureless dialogue eval', () => {
   writeSkill(root, 'alpha-skill', 'Handles alpha widgets. Use when changing alpha widgets.');
   const evalCase = completeCase('alpha-skill', 'change alpha widget');
   evalCase.evals = [{ ...behavioralEval([]), kind: 'dialogue' }];
-  writeJson(path.join(root, 'evals', 'cases', 'alpha-skill.json'), evalCase);
+  writeCase(root, 'alpha-skill', evalCase);
 
   const result = run(root, ['--behavioral', 'alpha-skill', '--dry-run']);
 
@@ -194,14 +191,8 @@ test('enforces the configured rank-1 floor', () => {
     'beta-skill',
     'Diagnoses urgent widget failures in production. Use when repairing urgent widget failures.',
   );
-  writeJson(
-    path.join(root, 'evals', 'cases', 'alpha-skill.json'),
-    completeCase('alpha-skill', 'urgent widget failure production', 2),
-  );
-  writeJson(
-    path.join(root, 'evals', 'cases', 'beta-skill.json'),
-    completeCase('beta-skill', 'repair urgent widget failure', 1),
-  );
+  writeCase(root, 'alpha-skill', completeCase('alpha-skill', 'urgent widget failure production', 2));
+  writeCase(root, 'beta-skill', completeCase('beta-skill', 'repair urgent widget failure', 1));
 
   const passing = run(root, ['--min-rank1', '50']);
   const failing = run(root, ['--min-rank1', '60']);
